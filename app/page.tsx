@@ -264,7 +264,7 @@ export default function Page() {
             disabled={!canGeneratePrompt}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === "generating" ? "Generating..." : "? Generate Prompt"}
+            {status === "generating" ? "Generating..." : "Generate Prompt"}
           </button>
 
           <label className="block">
@@ -293,7 +293,7 @@ export default function Page() {
             disabled={!canSubmit}
             className="w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ?? Merge Videos
+            Merge Videos
           </button>
         </div>
 
@@ -327,3 +327,5 @@ export default function Page() {
     </main>
   );
 }
+
+
