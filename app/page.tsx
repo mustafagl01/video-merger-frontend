@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -6,7 +6,7 @@ type MergeResponse = { download_url: string };
 
 type UiStatus = "idle" | "uploading" | "submitting" | "processing" | "ready" | "error";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://46.224.148.239:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.mgllabs.uk";
 
 function extractDownloadId(downloadUrl: string): string | null {
   const match = downloadUrl.match(/\/download\/([^/?#]+)/);
@@ -241,3 +241,4 @@ export default function Page() {
     </main>
   );
 }
+
