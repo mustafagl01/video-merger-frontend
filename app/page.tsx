@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MergeResponse = { download_url: string };
+type GeneratePromptResponse = { generated_prompt: string };
 
-type UiStatus = "idle" | "uploading" | "submitting" | "processing" | "ready" | "error";
+type UiStatus =
+  | "idle"
+  | "uploading"
+  | "generating"
+  | "submitting"
+  | "processing"
+  | "ready"
+  | "error";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.mgllabs.uk";
 
@@ -35,18 +43,30 @@ async function uploadMusicFile(file: File): Promise<string> {
 
 export default function Page() {
   const [driveLink, setDriveLink] = useState("");
+  const [rawPrompt, setRawPrompt] = useState("");
+  const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [musicFile, setMusicFile] = useState<File | null>(null);
+
   const [status, setStatus] = useState<UiStatus>("idle");
-  const [message, setMessage] = useState("Paste a public Google Drive folder link to begin.");
+  const [message, setMessage] = useState("Provide your video goal and Drive folder to begin.");
   const [downloadBlobUrl, setDownloadBlobUrl] = useState<string | null>(null);
   const [downloadFilename, setDownloadFilename] = useState("merged_video.mp4");
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
 
+  const finalPrompt = useMemo(() => {
+    return generatedPrompt.trim() || rawPrompt.trim();
+  }, [generatedPrompt, rawPrompt]);
+
+  const canGeneratePrompt = useMemo(() => {
+    return rawPrompt.trim().length > 0 && status !== "uploading" && status !== "submitting" && status !== "processing";
+  }, [rawPrompt, status]);
+
   const canSubmit = useMemo(() => {
-    return driveLink.trim().length > 0 && (status === "idle" || status === "error" || status === "ready");
-  }, [driveLink, status]);
+    const validStatus = status === "idle" || status === "error" || status === "ready";
+    return driveLink.trim().length > 0 && finalPrompt.length > 0 && validStatus;
+  }, [driveLink, finalPrompt, status]);
 
   useEffect(() => {
     return () => {
@@ -115,6 +135,38 @@ export default function Page() {
     }, 3000);
   };
 
+  const onGeneratePrompt = async () => {
+    if (!canGeneratePrompt) return;
+
+    try {
+      setStatus("generating");
+      setMessage("Generating professional editing prompt...");
+
+      const response = await fetch(`${API_BASE}/generate-prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_prompt: rawPrompt.trim() }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Prompt generation failed (${response.status})`);
+      }
+
+      const data = (await response.json()) as GeneratePromptResponse;
+      if (!data.generated_prompt?.trim()) {
+        throw new Error("API did not return generated_prompt.");
+      }
+
+      setGeneratedPrompt(data.generated_prompt);
+      setStatus("idle");
+      setMessage("Prompt generated. You can edit it before merging.");
+    } catch (err) {
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "Unexpected error while generating prompt.");
+    }
+  };
+
   const onSubmit = async () => {
     try {
       if (!canSubmit) return;
@@ -140,6 +192,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           drive_link: driveLink.trim(),
+          user_prompt: finalPrompt,
           ...(musicUrl ? { music_url: musicUrl } : {}),
         }),
       });
@@ -165,19 +218,22 @@ export default function Page() {
   const statusLabel: Record<UiStatus, string> = {
     idle: "Idle",
     uploading: "Uploading Music",
+    generating: "Generating Prompt",
     submitting: "Submitting",
     processing: "Processing",
     ready: "Complete",
     error: "Error",
   };
 
+  const isBusy = status === "uploading" || status === "generating" || status === "submitting" || status === "processing";
+
   return (
     <main className="min-h-screen px-4 py-10 md:px-6">
-      <section className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-800/80 bg-panel/75 p-6 shadow-glow backdrop-blur md:p-8">
+      <section className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-800/80 bg-panel/75 p-6 shadow-glow backdrop-blur md:p-8">
         <header className="mb-8">
           <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80">Video Merger API</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-100">Dashboard</h1>
-          <p className="mt-2 text-sm text-slate-400">Merge clips from a public Drive folder and optionally mix background music.</p>
+          <p className="mt-2 text-sm text-slate-400">Generate a professional edit prompt, merge Drive clips, and download the final video.</p>
         </header>
 
         <div className="space-y-5">
@@ -189,6 +245,36 @@ export default function Page() {
               onChange={(e) => setDriveLink(e.target.value)}
               placeholder="https://drive.google.com/drive/folders/..."
               className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none ring-cyan-400/60 transition focus:ring"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm text-slate-300">Tell us about your video project</span>
+            <textarea
+              value={rawPrompt}
+              onChange={(e) => setRawPrompt(e.target.value)}
+              rows={4}
+              placeholder="e.g. This is for a hair salon, energetic and modern atmosphere, show salon overview first then service details"
+              className="w-full resize-y rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none ring-cyan-400/60 transition focus:ring"
+            />
+          </label>
+
+          <button
+            onClick={onGeneratePrompt}
+            disabled={!canGeneratePrompt}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === "generating" ? "Generating..." : "? Generate Prompt"}
+          </button>
+
+          <label className="block">
+            <span className="mb-2 block text-sm text-slate-300">Improved Prompt (editable)</span>
+            <textarea
+              value={generatedPrompt}
+              onChange={(e) => setGeneratedPrompt(e.target.value)}
+              rows={5}
+              placeholder="Generated prompt will appear here. You can edit it before merge."
+              className="w-full resize-y rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-100 outline-none ring-cyan-400/60 transition focus:ring"
             />
           </label>
 
@@ -207,7 +293,7 @@ export default function Page() {
             disabled={!canSubmit}
             className="w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Merge Videos
+            ?? Merge Videos
           </button>
         </div>
 
@@ -219,7 +305,7 @@ export default function Page() {
 
           <p className="mt-3 text-sm text-slate-400">{message}</p>
 
-          {(status === "uploading" || status === "submitting" || status === "processing") && (
+          {isBusy && (
             <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-800">
               <div className="h-full w-1/3 animate-pulse rounded-full bg-cyan-400" />
             </div>
@@ -241,4 +327,3 @@ export default function Page() {
     </main>
   );
 }
-
